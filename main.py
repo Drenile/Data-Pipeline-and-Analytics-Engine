@@ -5,7 +5,7 @@ from pipeline.load import load_to_sql
 from analytics.metrics import compute_metrics
 from config.settings import DB_PATH, TABLE_NAME
 
-DATA_PATH = "data/raw/data.csv"
+DATA_PATH = "data/raw.csv"
 
 def ensure_directories():
     os.makedirs("db", exist_ok=True)
