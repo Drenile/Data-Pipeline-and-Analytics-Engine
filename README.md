@@ -19,7 +19,7 @@ The system prioritizes correctness, explainability, and defensive design, avoidi
 ---
 
 ## Directory Structure
-.
+'''.
 ├── main.py                  # Pipeline entry point
 ├── pipeline/                # Ingestion and transformation logic
 │   ├── ingest.py
@@ -42,7 +42,7 @@ The system prioritizes correctness, explainability, and defensive design, avoidi
 │   └── analytics.db         # SQLite database
 ├── requirements.txt
 └── .gitignore
-
+'''
 
 
 ---
