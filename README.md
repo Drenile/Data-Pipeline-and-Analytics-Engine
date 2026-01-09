@@ -90,5 +90,19 @@ pip install -r requirements.txt
 python main.py
 ```
 ---
-
+## Technologies Used
+- Python
+- Panda
+- SQLite
+---
+## Design Philosophy 
+- Accuracy over forced results
+- Schema-aware analytics
+- Deternministic and explainable output
+---
+## Future Improvements 
+- JSON report export
+- Visualization layer
+- Streaming ingestion
+- Cloud database support
 
