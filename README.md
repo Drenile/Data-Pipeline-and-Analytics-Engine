@@ -20,28 +20,29 @@ The system prioritizes correctness, explainability, and defensive design, avoidi
 
 ## Directory Structure
 .
-├── main.py
-├── pipeline/
-│ ├── ingest.py
-│ ├── transform.py
-│ ├── load.py
-│ ├── schema.py
-│ └── semantic_schema.py
-├── analytics/
-│ ├── metrics.py
-│ ├── data_quality.py
-│ ├── distributions.py
-│ ├── label_stats.py
-│ └── anomalies.py
+├── main.py                  # Pipeline entry point
+├── pipeline/                # Ingestion and transformation logic
+│   ├── ingest.py
+│   ├── transform.py
+│   ├── load.py
+│   ├── schema.py
+│   └── semantic_schema.py
+├── analytics/               # Analytics modules
+│   ├── metrics.py
+│   ├── data_quality.py
+│   ├── distributions.py
+│   ├── label_stats.py
+│   └── anomalies.py
 ├── config/
-│ └── settings.py
-├── data/
-│ ├── FastFood.csv
-│ └── Security.csv
+│   └── settings.py          # Database configuration
+├── data/                    # Input datasets
+│   ├── FastFood.csv
+│   └── Security.csv
 ├── db/
-│ └── analytics.db
+│   └── analytics.db         # SQLite database
 ├── requirements.txt
 └── .gitignore
+
 
 
 ---
