@@ -88,4 +88,7 @@ If a valid semantic schema cannot be inferred, analytics are skipped explicitly.
 ```bash
 pip install -r requirements.txt
 python main.py
+```
+---
+
 
