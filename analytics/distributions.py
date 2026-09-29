@@ -1,20 +1,19 @@
-import sqlite3
 import pandas as pd
 
-def numeric_distributions(db_path, table_name):
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
-    conn.close()
+from pipeline.schema import Schema
 
-    numeric_cols = df.select_dtypes(include="number")
 
+def numeric_distributions(df: pd.DataFrame, schema: Schema) -> dict:
+    """Summary statistics for numeric columns that actually vary."""
     stats = {}
-    for col in numeric_cols.columns:
+    for col in schema.numeric:
+        series = df[col]
+        if not series.std() > 0:  # also false for NaN
+            continue
         stats[col] = {
-            "mean": numeric_cols[col].mean(),
-            "std": numeric_cols[col].std(),
-            "min": numeric_cols[col].min(),
-            "max": numeric_cols[col].max()
+            "mean": series.mean(),
+            "std": series.std(),
+            "min": series.min(),
+            "max": series.max(),
         }
-
     return stats

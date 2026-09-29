@@ -1,113 +1,97 @@
-import os
-from pipeline.ingest import ingest_csv
-from pipeline.transform import clean_data
-from pipeline.load import load_to_sql
-from analytics.metrics import compute_metrics
-from config.settings import DB_PATH, TABLE_NAME
+import argparse
+import logging
+import sys
+from dataclasses import asdict
+from pathlib import Path
+
+from analytics.anomalies import zscore_anomalies
 from analytics.data_quality import data_quality_metrics
 from analytics.distributions import numeric_distributions
 from analytics.label_stats import label_distribution
-from analytics.anomalies import zscore_anomalies
+from analytics.metrics import core_metrics
+from config.settings import Settings
+from pipeline.errors import PipelineError
+from pipeline.ingest import read_csv
+from pipeline.load import save_to_sqlite
+from pipeline.report import to_json
+from pipeline.schema import infer_schema
+from pipeline.transform import clean_data
 
-DATA_PATH = "data/Security.csv"
-
-
-def ensure_directories():
-    os.makedirs("db", exist_ok=True)
-
-
-def section(title):
-    print(f"\n{title}")
-    print("-" * len(title))
+log = logging.getLogger("pipeline")
 
 
-def run_pipeline():
-    ensure_directories()
-
-    df, structural_schema, semantic_schema = ingest_csv(DATA_PATH)
-
-    # ─────────────────────────────
-    # PIPELINE STATUS
-    # ─────────────────────────────
-    section("PIPELINE STATUS")
-
-    usable = semantic_schema is not None
-    print(f"Dataset usable for analytics: {'YES' if usable else 'NO'}")
-
-    if not usable:
-        print("Reason: Insufficient semantic signals detected")
-
-    print(f"Rows ingested: {len(df)}")
-    print(f"Columns ingested: {len(df.columns)}")
-
-    # ─────────────────────────────
-    # SCHEMA ASSESSMENT
-    # ─────────────────────────────
-    section("SCHEMA ASSESSMENT")
-
-    print("Structural Schema:")
-    print(structural_schema)
-
-    print("\nSemantic Schema:")
-    print(semantic_schema if semantic_schema else "Not inferred")
-
-    # ─────────────────────────────
-    # LOAD
-    # ─────────────────────────────
+def run_pipeline(settings: Settings) -> dict:
+    df, sha256 = read_csv(settings.data_path, settings.max_file_bytes, settings.max_rows)
+    rows_read = len(df)
     df = clean_data(df)
-    load_to_sql(df, DB_PATH, TABLE_NAME)
+    log.info("Read %d rows from %s (%d after cleaning)", rows_read, settings.data_path.name, len(df))
 
-    # ─────────────────────────────
-    # CORE METRICS
-    # ─────────────────────────────
-    section("CORE ANALYTICS METRICS")
-    metrics = compute_metrics(DB_PATH, TABLE_NAME, semantic_schema)
-    print(metrics)
+    schema = infer_schema(df, settings.label_column)
+    save_to_sqlite(df, settings.db_path, settings.table_name)
+    log.info("Saved to %s, table '%s'", settings.db_path, settings.table_name)
 
-    # ─────────────────────────────
-    # DATA QUALITY
-    # ─────────────────────────────
-    section("DATA QUALITY SUMMARY")
-    dq = data_quality_metrics(DB_PATH, TABLE_NAME)
-    print(dq)
+    return {
+        "source": {
+            "file": settings.data_path.name,
+            "sha256": sha256,
+            "rows_read": rows_read,
+            "rows_after_cleaning": len(df),
+        },
+        "schema": asdict(schema),
+        "metrics": core_metrics(df, schema),
+        "data_quality": data_quality_metrics(df),
+        "distributions": numeric_distributions(df, schema)
+            or _skipped("no numeric columns with variance"),
+        "labels": label_distribution(df, schema)
+            or _skipped(f"no '{settings.label_column}' column"),
+        "anomalies": zscore_anomalies(df, schema, settings.zscore_threshold)
+            or _skipped("no numeric columns with variance"),
+    }
 
-    constant_cols = [k for k, v in dq.items() if v.get("is_constant")]
-    if constant_cols:
-        print("\nConstant columns detected:")
-        for col in constant_cols:
-            print(f"- {col}")
 
-    # ─────────────────────────────
-    # DISTRIBUTIONS
-    # ─────────────────────────────
-    section("DISTRIBUTION ANALYTICS")
-    dist = numeric_distributions(DB_PATH, TABLE_NAME)
-    if dist:
-        print(dist)
+def _skipped(reason: str) -> dict:
+    return {"skipped": reason}
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    defaults = Settings()
+    parser = argparse.ArgumentParser(description="Ingest a CSV, store it in SQLite and report analytics as JSON.")
+    parser.add_argument("csv", nargs="?", type=Path, default=defaults.data_path, help="input CSV file")
+    parser.add_argument("--db", type=Path, default=defaults.db_path, help="SQLite database path")
+    parser.add_argument("--table", default=defaults.table_name, help="table to write")
+    parser.add_argument("--label-column", default=defaults.label_column, help="column holding class labels")
+    parser.add_argument("--zscore-threshold", type=float, default=defaults.zscore_threshold)
+    parser.add_argument("--max-file-mb", type=float, default=defaults.max_file_bytes / 1024 / 1024)
+    parser.add_argument("--max-rows", type=int, default=defaults.max_rows)
+    parser.add_argument("-o", "--output", type=Path, help="write the report here instead of stdout")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    args = parse_args(argv)
+    try:
+        settings = Settings(
+            data_path=args.csv,
+            db_path=args.db,
+            table_name=args.table,
+            label_column=args.label_column,
+            zscore_threshold=args.zscore_threshold,
+            max_file_bytes=int(args.max_file_mb * 1024 * 1024),
+            max_rows=args.max_rows,
+        )
+        report = to_json(run_pipeline(settings))
+    except PipelineError as e:
+        log.error("%s", e)
+        return 1
+
+    if args.output:
+        args.output.write_text(report + "\n", encoding="utf-8")
+        log.info("Report written to %s", args.output)
     else:
-        print("Skipped — no numeric columns with variance")
-
-    # ─────────────────────────────
-    # LABEL ANALYTICS
-    # ─────────────────────────────
-    section("LABEL ANALYTICS")
-    labels = label_distribution(DB_PATH, TABLE_NAME)
-    if labels:
-        print(labels)
-    else:
-        print("Skipped — no label column detected")
-
-    # ─────────────────────────────
-    # ANOMALY DETECTION
-    # ─────────────────────────────
-    section("ANOMALY DETECTION")
-    anomalies = zscore_anomalies(DB_PATH, TABLE_NAME)
-    if anomalies:
-        print(anomalies)
-    else:
-        print("Skipped — no baseline for anomaly detection")
+        print(report)
+    return 0
 
 
 if __name__ == "__main__":
-    run_pipeline()
-
+    sys.exit(main())

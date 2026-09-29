@@ -1,21 +1,33 @@
+from dataclasses import dataclass
+
 import pandas as pd
 
-def infer_structural_schema(df: pd.DataFrame) -> dict:
- 
-    #Identify column types without assuming meaning.
-    schema = {
-        "timestamps": [],
-        "numeric": [],
-        "categorical": []
-    }
+
+@dataclass(frozen=True)
+class Schema:
+    """Column roles used to decide which analytics apply."""
+    timestamps: list[str]
+    numeric: list[str]      # measurable values; excludes booleans and the label
+    boolean: list[str]
+    categorical: list[str]
+    label: str | None
+
+
+def infer_schema(df: pd.DataFrame, label_column: str) -> Schema:
+    label = label_column if label_column in df.columns else None
+    timestamps, numeric, boolean, categorical = [], [], [], []
 
     for col in df.columns:
-        if pd.api.types.is_datetime64_any_dtype(df[col]):
-            schema["timestamps"].append(col)
-        elif pd.api.types.is_numeric_dtype(df[col]):
-            schema["numeric"].append(col)
+        if col == label:
+            continue
+        series = df[col]
+        if pd.api.types.is_datetime64_any_dtype(series):
+            timestamps.append(col)
+        elif pd.api.types.is_bool_dtype(series):
+            boolean.append(col)
+        elif pd.api.types.is_numeric_dtype(series):
+            numeric.append(col)
         else:
-            schema["categorical"].append(col)
+            categorical.append(col)
 
-    return schema
-
+    return Schema(timestamps, numeric, boolean, categorical, label)

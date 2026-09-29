@@ -1,24 +1,16 @@
-import sqlite3
 import pandas as pd
 
-def zscore_anomalies(db_path, table_name, threshold=3.0):
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
-    conn.close()
+from pipeline.schema import Schema
 
-    numeric_cols = df.select_dtypes(include="number")
+
+def zscore_anomalies(df: pd.DataFrame, schema: Schema, threshold: float = 3.0) -> dict:
+    """Per numeric column, the count and share of rows whose |z-score| exceeds the threshold."""
     anomalies = {}
-
-    for col in numeric_cols.columns:
-        mean = numeric_cols[col].mean()
-        std = numeric_cols[col].std()
-
-        if std == 0 or pd.isna(std):
+    for col in schema.numeric:
+        series = df[col]
+        std = series.std()
+        if not std > 0:  # also false for NaN
             continue
-
-        zscores = (numeric_cols[col] - mean) / std
-        anomaly_rate = (zscores.abs() > threshold).mean()
-
-        anomalies[col] = anomaly_rate
-
+        flagged = ((series - series.mean()) / std).abs() > threshold
+        anomalies[col] = {"count": int(flagged.sum()), "rate": flagged.mean()}
     return anomalies
